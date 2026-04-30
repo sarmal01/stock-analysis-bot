@@ -27,7 +27,7 @@ def run_analysis():
             
             # モデルを安定性の高い 1.5-flash に変更
             response = client.models.generate_content(
-                model="gemini-2.5-flash", 
+                model="gemini-3-flash-preview", 
                 contents=f"銘柄 {symbol} の分析をして..."
             )
             print(f"Analyzing {symbol}...")
