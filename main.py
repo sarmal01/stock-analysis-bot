@@ -10,7 +10,7 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
 # 分析対象の銘柄
-TICKERS = [""^GSPC", "NVDA", "9432.T""]
+TICKERS = ["^GSPC", "NVDA", "9432.T"]
 
 def run_analysis():
     all_results = []
