@@ -18,6 +18,17 @@ def run_analysis():
     
     for symbol in TICKERS:
         try:
+            # 1分あたりの制限を避けるため、各銘柄の前に20秒待機
+            print(f"Waiting for safety...")
+            time.sleep(20) 
+            
+            print(f"Analyzing {symbol}...")
+            
+            # モデルを安定性の高い 1.5-flash に変更
+            response = client.models.generate_content(
+                model="gemini-1.5-flash", 
+                contents=f"銘柄 {symbol} の分析をして..."
+            )
             print(f"Analyzing {symbol}...")
             ticker = yf.Ticker(symbol)
             
