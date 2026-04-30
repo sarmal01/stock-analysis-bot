@@ -1,0 +1,3 @@
+google-genai
+yfinance
+pandas_ta
