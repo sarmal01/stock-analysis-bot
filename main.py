@@ -20,11 +20,18 @@ def send_to_discord(results):
 
     content = "📢 **本日のNISA銘柄分析レポート**\n"
     for res in results:
-        # スコアに応じて絵文字を変えるなどのロジック
-        emoji = "🚀" if res['score'] > 70 else "⚠️" if res['score'] < 30 else "📊"
+        # スコアを数値(int)に変換。文字で届いても大丈夫なようにします。
+        try:
+            score_val = int(res['score'])
+        except (ValueError, TypeError):
+            score_val = 0 # 変換できない場合は0点扱いにする安全策
+
+        # 数値として比較
+        emoji = "🚀" if score_val > 70 else "⚠️" if score_val < 30 else "📊"
+        
         content += f"\n**{res['name']} ({res['ticker']})**\n"
-        content += f"スコア: {res['score']} {emoji}\n"
-        content += f"理由: {res['reason'][:100]}...\n" # 長すぎるとエラーになるので要約
+        content += f"スコア: {score_val} {emoji}\n"
+        content += f"理由: {res['reason'][:100]}...\n"
 
     payload = {"content": content}
     requests.post(webhook_url, json=payload)
