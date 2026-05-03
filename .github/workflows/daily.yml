@@ -5,7 +5,7 @@ on:
     # 毎日日本時間 18:00 (UTC 9:00) に実行
     - cron: '0 9 * * 1-5'
   workflow_dispatch: # 手動で実行ボタンを押せるようにする設定
-  
+
 permissions:
   contents: write
 
@@ -13,10 +13,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # Node.js 20の警告を消すため v3 -> v4 にアップデート
+      - uses: actions/checkout@v4
 
+      # Node.js 20の警告を消すため v4 -> v5 にアップデート
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -28,6 +30,8 @@ jobs:
       - name: Run analysis
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # --- ここを追加：Discordへの「鍵」を渡します ---
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python main.py
 
       - name: Commit and Push
