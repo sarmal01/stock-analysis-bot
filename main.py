@@ -6,7 +6,7 @@ import yfinance as yf
 import pandas_ta as ta
 import requests
 from google import genai
-from datetime import datetime, timedelta, timezone # 冒頭のimportに追加
+from datetime import datetime, timedelta, timezone
 
 # セキュリティ設定
 API_KEY = os.getenv("GEMINI_API_KEY")
@@ -27,14 +27,13 @@ def send_to_discord(res):
         score_val = 0
 
     emoji = "🚀" if score_val > 80 else "📈" if score_val > 60 else "⚠️" if score_val < 40 else "📊"
-
+    
     jst = timezone(timedelta(hours=9))
     jst_now = datetime.now(jst).strftime('%Y/%m/%d %H:%M')
     
-    # 銘柄ごとに独立したメッセージを作成
     content = (
         f"📅 **{jst_now} 分析レポート**\n"
-        f"**{res['name']} ({res['ticker']})**\n"
+        f"**{res.get('name', '不明')} ({res['ticker']})**\n"
         f"スコア: **{score_val}** {emoji}\n"
         f"━━━━━━━━━━━━━━━\n"
         f"**【今後の展望】**\n{res['reason']}\n\n"
@@ -43,9 +42,8 @@ def send_to_discord(res):
     )
 
     payload = {"content": content}
-    # Discordのレートリミットを考慮して少し待機
     requests.post(webhook_url, json=payload)
-    time.sleep(1)
+    time.sleep(2) # Discordの制限対策で少し長めに待機
 
 def run_analysis():
     all_results = []
@@ -61,29 +59,35 @@ def run_analysis():
             
             # 1. テクニカル指標の計算
             df = ticker.history(period="3mo")
+            if df.empty:
+                print(f"  ❌ {symbol} データが取得できませんでした")
+                continue
+
             df['RSI'] = ta.rsi(df['Close'], length=14)
             df['SMA20'] = ta.sma(df['Close'], length=20)
             technical_data = df.tail(5)[['Close', 'Volume', 'RSI', 'SMA20']].to_csv()
 
             # 2. ニュースデータの取得
-            news_list = ticker.news[:3]
             news_text = ""
-            for n in news_list:
-                c = n.get('content', {})
-                news_text += f"■ {c.get('title')}\n要約: {c.get('summary', '')[:100]}...\n"
+            try:
+                news_list = ticker.news[:3]
+                for n in news_list:
+                    c = n.get('content', {})
+                    news_text += f"■ {c.get('title')}\n要約: {c.get('summary', '')[:100]}...\n"
+            except:
+                news_text = "ニュースの取得に失敗しました。"
 
-            # 3. Geminiによる分析（プロンプトを「差が出るよう」に強化）
+            # 3. Geminiによる分析 (モデル名を1.5-flashに修正)
             prompt = f"""
             銘柄 {symbol} について、投資家視点で【厳格に】分析してください。
-            以下のルールを厳守すること：
             1. 回答は必ず日本語。
-            2. スコアは「75」などの無難な値に逃げず、指標に基づき0〜100で【相対的な差】を明確につけること。
-            3. 理由とリスクは、提供された数値データ（RSI, SMA）を具体的に引用して説明すること。
+            2. スコアは0〜100で【相対的な差】を明確につけること。
+            3. 提供された数値データ（RSI, SMA）を具体的に引用すること。
 
             {{
                 "score": 整数,
-                "reason": "展望を具体的に",
-                "risk": "リスクを具体的に"
+                "reason": "今後の展望",
+                "risk": "注意すべきリスク"
             }}
 
             【市場データ】\n{technical_data}
@@ -91,14 +95,19 @@ def run_analysis():
             """
             
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.5-flash", # 正式名称に修正
                 contents=prompt,
                 config={'response_mime_type': 'application/json'}
             )
             
             res_json = json.loads(response.text)
             res_json['ticker'] = symbol
-            res_json['name'] = ticker.info.get('shortName', symbol)
+            
+            # 銘柄名の取得（失敗しても止まらないようにする）
+            try:
+                res_json['name'] = ticker.info.get('shortName', symbol)
+            except:
+                res_json['name'] = symbol
             
             # ベクトル化
             print(f"  ベクトル化中...")
@@ -107,14 +116,13 @@ def run_analysis():
             
             all_results.append(res_json)
             
-            # 銘柄ごとに即座にDiscordへ送信（これで文字数制限を回避）
+            # Discordへ送信
             send_to_discord(res_json)
             print(f"  ✅ {symbol} 分析・送信完了")
 
         except Exception as e:
             print(f"  ❌ {symbol} エラー発生: {e}")
 
-    # 保存処理
     if all_results:
         pd.DataFrame(all_results).to_json("stock_research_data.json", orient="records", force_ascii=False)
         print("✅ 全データの保存が完了しました。")
