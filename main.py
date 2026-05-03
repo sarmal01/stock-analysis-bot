@@ -24,13 +24,6 @@ def run_analysis():
             time.sleep(20) 
             
             print(f"Analyzing {symbol}...")
-            
-            # モデルを安定性の高い 1.5-flash に変更
-            response = client.models.generate_content(
-                model="gemini-2.5-flash", 
-                contents=f"銘柄 {symbol} の分析をして..."
-            )
-            print(f"Analyzing {symbol}...")
             ticker = yf.Ticker(symbol)
             
             # 1. テクニカル指標の計算（3ヶ月分取得して直近5日分を使用）
@@ -55,7 +48,7 @@ def run_analysis():
             """
             
             response = client.models.generate_content(
-                model="gemini-2.0-flash", 
+                model="gemini-2.5-flash", 
                 contents=prompt,
                 config={'response_mime_type': 'application/json'}
             )
