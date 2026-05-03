@@ -95,7 +95,7 @@ def run_analysis():
             """
             
             response = client.models.generate_content(
-                model="gemini-2.5-flash", # 正式名称に修正
+                model="gemini-3-flash-preview", # 正式名称に修正
                 contents=prompt,
                 config={'response_mime_type': 'application/json'}
             )
