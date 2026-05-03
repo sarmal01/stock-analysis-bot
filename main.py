@@ -6,6 +6,7 @@ import yfinance as yf
 import pandas_ta as ta
 import requests
 from google import genai
+from datetime import datetime, timedelta, timezone # 冒頭のimportに追加
 
 # セキュリティ設定
 API_KEY = os.getenv("GEMINI_API_KEY")
@@ -26,9 +27,13 @@ def send_to_discord(res):
         score_val = 0
 
     emoji = "🚀" if score_val > 80 else "📈" if score_val > 60 else "⚠️" if score_val < 40 else "📊"
+
+    jst = timezone(timedelta(hours=9))
+    jst_now = datetime.now(jst).strftime('%Y/%m/%d %H:%M')
     
     # 銘柄ごとに独立したメッセージを作成
     content = (
+        f"📅 **{jst_now} 分析レポート**\n"
         f"**{res['name']} ({res['ticker']})**\n"
         f"スコア: **{score_val}** {emoji}\n"
         f"━━━━━━━━━━━━━━━\n"
