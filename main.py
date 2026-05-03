@@ -4,6 +4,7 @@ import json
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
+import requests
 from google import genai
 
 # セキュリティ設定：GitHubのSecretsから読み込む
@@ -12,6 +13,21 @@ client = genai.Client(api_key=API_KEY)
 
 # 分析対象の銘柄
 TICKERS = ["^GSPC", "NVDA", "9432.T"]
+def send_to_discord(results):
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return
+
+    content = "📢 **本日のNISA銘柄分析レポート**\n"
+    for res in results:
+        # スコアに応じて絵文字を変えるなどのロジック
+        emoji = "🚀" if res['score'] > 70 else "⚠️" if res['score'] < 30 else "📊"
+        content += f"\n**{res['name']} ({res['ticker']})**\n"
+        content += f"スコア: {res['score']} {emoji}\n"
+        content += f"理由: {res['reason'][:100]}...\n" # 長すぎるとエラーになるので要約
+
+    payload = {"content": content}
+    requests.post(webhook_url, json=payload)
 
 def run_analysis():
     all_results = []
@@ -72,6 +88,9 @@ def run_analysis():
     if all_results:
         pd.DataFrame(all_results).to_json("stock_research_data.json", orient="records", force_ascii=False)
         print("✅ 全データの保存が完了しました。")
-
+        
+        print("Discordに通知を送信中...")
+        send_to_discord(all_results)
+        
 if __name__ == "__main__":
     run_analysis()
