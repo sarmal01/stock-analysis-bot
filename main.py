@@ -7,38 +7,40 @@ import pandas_ta as ta
 import requests
 from google import genai
 
-# セキュリティ設定：GitHubのSecretsから読み込む
+# セキュリティ設定
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
 # 分析対象の銘柄
 TICKERS = ["^GSPC", "NVDA", "9432.T"]
-def send_to_discord(results):
+
+def send_to_discord(res):
+    """1銘柄ごとにDiscordへ送信する"""
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return
 
-    content = "📢 **本日のNISA銘柄分析レポート**\n"
-    for res in results:
-        try:
-            score_val = int(res['score'])
-        except:
-            score_val = 0
+    try:
+        score_val = int(res['score'])
+    except:
+        score_val = 0
 
-        emoji = "🚀" if score_val > 70 else "⚠️" if score_val < 30 else "📊"
-        
-        content += f"\n**{res['name']} ({res['ticker']})**\n"
-        content += f"スコア: {score_val} {emoji}\n"
-        # [:100] を削除して、文が切れないようにしました
-        content += f"理由: {res['reason']}\n"
-        content += f"リスク: {res['risk']}\n"
-
-    # Discordの1メッセージ制限(2000字)を超えないよう念のため分割処理を考慮
-    if len(content) > 1900:
-        content = content[:1870] + "...\n(文字数制限のため省略)"
+    emoji = "🚀" if score_val > 80 else "📈" if score_val > 60 else "⚠️" if score_val < 40 else "📊"
+    
+    # 銘柄ごとに独立したメッセージを作成
+    content = (
+        f"**{res['name']} ({res['ticker']})**\n"
+        f"スコア: **{score_val}** {emoji}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"**【今後の展望】**\n{res['reason']}\n\n"
+        f"**【注意すべきリスク】**\n{res['risk']}\n"
+        f"━━━━━━━━━━━━━━━"
+    )
 
     payload = {"content": content}
+    # Discordのレートリミットを考慮して少し待機
     requests.post(webhook_url, json=payload)
+    time.sleep(1)
 
 def run_analysis():
     all_results = []
@@ -46,14 +48,13 @@ def run_analysis():
     
     for symbol in TICKERS:
         try:
-            # 1分あたりの制限を避けるため、各銘柄の前に20秒待機
             print(f"Waiting for safety...")
             time.sleep(20) 
             
             print(f"Analyzing {symbol}...")
             ticker = yf.Ticker(symbol)
             
-            # 1. テクニカル指標の計算（3ヶ月分取得して直近5日分を使用）
+            # 1. テクニカル指標の計算
             df = ticker.history(period="3mo")
             df['RSI'] = ta.rsi(df['Close'], length=14)
             df['SMA20'] = ta.sma(df['Close'], length=20)
@@ -66,20 +67,22 @@ def run_analysis():
                 c = n.get('content', {})
                 news_text += f"■ {c.get('title')}\n要約: {c.get('summary', '')[:100]}...\n"
 
-            # 3. Geminiによる統合分析（武田さんのプロンプトをベースに最適化）
+            # 3. Geminiによる分析（プロンプトを「差が出るよう」に強化）
             prompt = f"""
-            銘柄 {symbol} について、投資家（NISA運用）の視点で分析してください。
-            回答は必ず「日本語」で、以下のJSON形式を厳守してください。
-            JSON以外の文字（```json 等）は含めないでください。
+            銘柄 {symbol} について、投資家視点で【厳格に】分析してください。
+            以下のルールを厳守すること：
+            1. 回答は必ず日本語。
+            2. スコアは「75」などの無難な値に逃げず、指標に基づき0〜100で【相対的な差】を明確につけること。
+            3. 理由とリスクは、提供された数値データ（RSI, SMA）を具体的に引用して説明すること。
 
             {{
-                "score": 0から100までの整数（100が最高）,
-                "reason": "今後の展望（日本語で詳細に）",
-                "risk": "注意すべき点（日本語で詳細に）"
+                "score": 整数,
+                "reason": "展望を具体的に",
+                "risk": "リスクを具体的に"
             }}
 
-            【市場データ（直近5日分）】\n{technical_data}
-            【関連ニュース】\n{news_text}
+            【市場データ】\n{technical_data}
+            【ニュース】\n{news_text}
             """
             
             response = client.models.generate_content(
@@ -92,13 +95,16 @@ def run_analysis():
             res_json['ticker'] = symbol
             res_json['name'] = ticker.info.get('shortName', symbol)
             
-            # ベクトル化（類似度分析用）
+            # ベクトル化
             print(f"  ベクトル化中...")
             emb = client.models.embed_content(model="models/gemini-embedding-2", contents=res_json['reason'])
             res_json['embedding'] = emb.embeddings[0].values
             
             all_results.append(res_json)
-            print(f"  ✅ {symbol} 分析完了")
+            
+            # 銘柄ごとに即座にDiscordへ送信（これで文字数制限を回避）
+            send_to_discord(res_json)
+            print(f"  ✅ {symbol} 分析・送信完了")
 
         except Exception as e:
             print(f"  ❌ {symbol} エラー発生: {e}")
@@ -107,9 +113,6 @@ def run_analysis():
     if all_results:
         pd.DataFrame(all_results).to_json("stock_research_data.json", orient="records", force_ascii=False)
         print("✅ 全データの保存が完了しました。")
-        
-        print("Discordに通知を送信中...")
-        send_to_discord(all_results)
-        
+
 if __name__ == "__main__":
     run_analysis()
