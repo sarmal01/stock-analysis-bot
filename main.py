@@ -20,18 +20,22 @@ def send_to_discord(results):
 
     content = "📢 **本日のNISA銘柄分析レポート**\n"
     for res in results:
-        # スコアを数値(int)に変換。文字で届いても大丈夫なようにします。
         try:
             score_val = int(res['score'])
-        except (ValueError, TypeError):
-            score_val = 0 # 変換できない場合は0点扱いにする安全策
+        except:
+            score_val = 0
 
-        # 数値として比較
         emoji = "🚀" if score_val > 70 else "⚠️" if score_val < 30 else "📊"
         
         content += f"\n**{res['name']} ({res['ticker']})**\n"
         content += f"スコア: {score_val} {emoji}\n"
-        content += f"理由: {res['reason'][:100]}...\n"
+        # [:100] を削除して、文が切れないようにしました
+        content += f"理由: {res['reason']}\n"
+        content += f"リスク: {res['risk']}\n"
+
+    # Discordの1メッセージ制限(2000字)を超えないよう念のため分割処理を考慮
+    if len(content) > 1900:
+        content = content[:1870] + "...\n(文字数制限のため省略)"
 
     payload = {"content": content}
     requests.post(webhook_url, json=payload)
@@ -64,14 +68,22 @@ def run_analysis():
 
             # 3. Geminiによる統合分析（武田さんのプロンプトをベースに最適化）
             prompt = f"""
-            銘柄 {symbol} の分析依頼。
-            【数値と指標】\n{technical_data}
-            【ニュース】\n{news_text}
-            上記から、今後の展望を分析し JSON形式(score, reason, risk) で出力してください。
+            銘柄 {symbol} について、投資家（NISA運用）の視点で分析してください。
+            回答は必ず「日本語」で、以下のJSON形式を厳守してください。
+            JSON以外の文字（```json 等）は含めないでください。
+
+            {{
+                "score": 0から100までの整数（100が最高）,
+                "reason": "今後の展望（日本語で詳細に）",
+                "risk": "注意すべき点（日本語で詳細に）"
+            }}
+
+            【市場データ（直近5日分）】\n{technical_data}
+            【関連ニュース】\n{news_text}
             """
             
             response = client.models.generate_content(
-                model="gemini-2.5-flash", 
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config={'response_mime_type': 'application/json'}
             )
